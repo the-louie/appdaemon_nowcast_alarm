@@ -1,0 +1,18 @@
+# Rain Warning - Home Assistant AppDaemon Configuration
+# Copyright (c) 2025 the_louie
+
+rain_warning:
+  module: i1_met_nowcast_alarm
+  class: RainWarning
+
+  nowcast_sensor: weather.met_no_nowcast_met_nowcast
+  door_window_sensors:
+    - binary_sensor.sovrum_balkong_door_sensor
+    - binary_sensor.entredorr_door_sensor
+    - binary_sensor.maggans_dorr_door_sensor
+    - binary_sensor.vr_door_door_sensor
+    - binary_sensor.kallardorren_door_sensor
+
+  persons:
+    - name: "anders"
+      notify: "mobile_app_pixel_9_pro"
