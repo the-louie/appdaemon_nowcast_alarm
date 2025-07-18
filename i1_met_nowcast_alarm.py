@@ -36,7 +36,7 @@ class RainWarning(hass.Hass):
         # Start periodic rain check
         self.run_every(self.check_rain_forecast, "now", 5 * 60)  # Every 5 minutes
 
-    def check_rain_forecast(self, entity=None, new=None):
+    def check_rain_forecast(self, entity=None, attribute=None, old=None, new=None, **kwargs):
         """Check if rain is expected within 15 minutes and doors are open."""
         try:
             # Skip if door closed (only check when door opens)
