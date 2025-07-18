@@ -7,7 +7,7 @@ Copyright (c) 2025 the_louie
 
 import appdaemon.plugins.hass.hassapi as hass
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class RainWarning(hass.Hass):
@@ -49,7 +49,7 @@ class RainWarning(hass.Hass):
                 return
 
             forecast_data = json.loads(nowcast_state)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             threshold_time = now + timedelta(minutes=15)
 
             # Check for rain within 15 minutes
