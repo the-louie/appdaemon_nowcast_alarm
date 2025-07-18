@@ -27,7 +27,7 @@ class RainWarning(hass.Hass):
 
         # State tracking
         self.last_notification_time = None
-        self.notification_cooldown = 300  # 5 minutes cooldown
+        self.notification_cooldown = 180  # 3 minutes cooldown
 
         # Listen for state changes on door sensors
         for sensor in self.door_sensors:
@@ -50,10 +50,11 @@ class RainWarning(hass.Hass):
 
             forecast_data = json.loads(nowcast_state)
             now = datetime.now(timezone.utc)
-            threshold_time = now + timedelta(minutes=15)
+            threshold_time = now + timedelta(minutes=30)
 
-            # Check for rain within 15 minutes
+            # Check for rain within 30 minutes
             rain_found = False
+            rain_minutes = 0
             for forecast in forecast_data:
                 if not forecast.get("datetime"):
                     continue
@@ -65,6 +66,7 @@ class RainWarning(hass.Hass):
                 if (forecast_time >= now and
                     forecast.get("precipitation", 0) > 0):
                     rain_found = True
+                    rain_minutes = int((forecast_time - now).total_seconds() / 60)
                     break
 
             if not rain_found:
@@ -81,7 +83,7 @@ class RainWarning(hass.Hass):
             if (self.last_notification_time is None or
                 (now - self.last_notification_time).total_seconds() >= self.notification_cooldown):
 
-                message = "⚠️ Rain Warning: Rain expected within 15 minutes and doors are open!"
+                message = f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes and doors are open!"
                 for person in self.persons:
                     notify_service = person.get("notify")
                     if notify_service:
