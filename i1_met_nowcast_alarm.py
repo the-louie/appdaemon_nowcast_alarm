@@ -53,6 +53,7 @@ class RainWarning(hass.Hass):
             threshold_time = now + timedelta(minutes=15)
 
             # Check for rain within 15 minutes
+            rain_found = False
             for forecast in forecast_data:
                 if not forecast.get("datetime"):
                     continue
@@ -63,8 +64,10 @@ class RainWarning(hass.Hass):
 
                 if (forecast_time >= now and
                     forecast.get("precipitation", 0) > 0):
+                    rain_found = True
                     break
-            else:
+
+            if not rain_found:
                 return  # No rain expected
 
             # Rain expected, now check if any doors are open
