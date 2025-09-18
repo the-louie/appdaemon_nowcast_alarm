@@ -118,6 +118,7 @@ class RainWarning(hass.Hass):
             # Check for rain within 30 minutes
             rain_found = False
             rain_minutes = 0
+            rain_start_time = None
             for forecast in forecast_data:
                 if not forecast.get("datetime"):
                     continue
@@ -130,6 +131,7 @@ class RainWarning(hass.Hass):
                     forecast.get("precipitation", 0) > 0):
                     rain_found = True
                     rain_minutes = int((forecast_time - now).total_seconds() / 60)
+                    rain_start_time = forecast_time
                     break
 
             if not rain_found:
@@ -161,7 +163,9 @@ class RainWarning(hass.Hass):
                     trigger_state=new
                 )
 
-                message = f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes and doors are open!"
+                # Format the rain start time in local time
+                local_rain_time = rain_start_time.astimezone().strftime("%H:%M")
+                message = f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes (at {local_rain_time}) and doors are open!"
                 for person in self.persons:
                     notify_service = person.get("notify")
                     if notify_service:
