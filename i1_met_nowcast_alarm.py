@@ -21,6 +21,14 @@ class RainWarning(hass.Hass):
         self.door_sensors = self.args.get("door_window_sensors", [])
         self.persons = self.args.get("persons", [])
 
+        # Android companion-app delivery settings. The default HA notification channel
+        # can be disabled on the phone, which silently discards every notification sent
+        # to it - HA reports success and nothing arrives. Sending on a dedicated channel
+        # keeps these alerts independent of that setting and lets them be muted on
+        # their own without affecting other apps. See backlog T-52.
+        self.notification_channel = self.args.get("notification_channel", "weather_alerts")
+        self.notification_priority = self.args.get("notification_priority", "high")
+
         # Validation
         if not all([self.nowcast_sensor, self.door_sensors, self.persons]):
             self.log("Error: Missing required configuration (nowcast_sensor, door_window_sensors, or persons)", level="ERROR")
@@ -48,6 +56,22 @@ class RainWarning(hass.Hass):
                 os.makedirs(self.log_dir)
         except Exception as e:
             self.log(f"Error creating log directory: {e}", level="ERROR")
+
+    def _notification_data(self) -> dict:
+        """Build the companion-app data block for a notification.
+
+        Returns the Android delivery hints every notify call in this app must carry:
+        a dedicated channel, plus priority/ttl so the message is not deferred by Doze.
+        Returns an empty dict if no channel is configured, so the caller can pass it
+        unconditionally.
+        """
+        if not self.notification_channel:
+            return {}
+        data = {"channel": self.notification_channel}
+        if self.notification_priority:
+            data["priority"] = self.notification_priority
+            data["ttl"] = 0
+        return data
 
     def log_notification_debug(self, forecast_data, rain_found, rain_minutes, door_states, trigger_entity=None, trigger_state=None):
         """Log debug information when a notification is sent."""
@@ -169,7 +193,7 @@ class RainWarning(hass.Hass):
                 for person in self.persons:
                     notify_service = person.get("notify")
                     if notify_service:
-                        self.call_service(f"notify/{notify_service}", message=message)
+                        self.call_service(f"notify/{notify_service}", message=message, data=self._notification_data())
 
                 self.last_notification_time = now
                 self.log("Rain warning notification sent", level="INFO")
