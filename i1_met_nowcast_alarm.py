@@ -73,6 +73,22 @@ class RainWarning(hass.Hass):
             data["ttl"] = 0
         return data
 
+    def _friendly(self, entity_id):
+        """Readable name for a sensor, falling back to the entity id.
+
+        `binary_sensor.kallardorren_door_sensor` in a phone notification is
+        unreadable; the friendly_name attribute gives "Källardörren".
+
+        Never raises. The whole point of this message is that it arrives, so a
+        missing attribute or a failed lookup degrades to the entity id rather
+        than losing the alert.
+        """
+        try:
+            name = self.get_state(entity_id, attribute="friendly_name")
+        except Exception:
+            return entity_id
+        return name or entity_id
+
     def log_notification_debug(self, forecast_data, rain_found, rain_minutes, door_states, trigger_entity=None, trigger_state=None):
         """Log debug information when a notification is sent."""
         try:
@@ -163,15 +179,15 @@ class RainWarning(hass.Hass):
 
             # Rain expected, now check if any doors are open
             door_states = {}
-            doors_open = False
+            open_sensors = []
             for sensor in self.door_sensors:
                 state = self.get_state(sensor)
                 door_states[sensor] = state
                 if state == "on":
-                    doors_open = True
+                    open_sensors.append(sensor)
 
-            if not doors_open:
-                return  # No doors open
+            if not open_sensors:
+                return  # Nothing open
 
             # Both conditions met, check cooldown and send notification
             if (self.last_notification_time is None or
@@ -189,7 +205,18 @@ class RainWarning(hass.Hass):
 
                 # Format the rain start time in local time
                 local_rain_time = rain_start_time.astimezone().strftime("%H:%M")
-                message = f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes (at {local_rain_time}) and doors are open!"
+                # Name what is open. "doors are open" with five sensors, and more
+                # coming, means walking the whole house to find out which. The
+                # states were already collected above and thrown away (T-54).
+                #
+                # Deliberately not the word "doors": the config key is
+                # `door_window_sensors` and window sensors are being added, so a
+                # hardcoded noun would be wrong twice over.
+                open_names = ", ".join(self._friendly(s) for s in open_sensors)
+                message = (
+                    f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes "
+                    f"(at {local_rain_time}). Öppet: {open_names}"
+                )
                 for person in self.persons:
                     notify_service = person.get("notify")
                     if notify_service:
