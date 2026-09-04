@@ -217,13 +217,63 @@ class RainWarning(hass.Hass):
                     f"⚠️ Rain Warning: Rain expected in {rain_minutes} minutes "
                     f"(at {local_rain_time}). Öppet: {open_names}"
                 )
-                for person in self.persons:
-                    notify_service = person.get("notify")
-                    if notify_service:
-                        self.call_service(f"notify/{notify_service}", message=message, data=self._notification_data())
+                sent, failed = self._notify_rain(message)
 
+                # Set unconditionally, and outside the per-recipient loop. A
+                # partial send is still a send; re-firing the whole alert on the
+                # next sensor event would spam everyone who did receive it.
                 self.last_notification_time = now
-                self.log("Rain warning notification sent", level="INFO")
+
+                if sent:
+                    self.log(
+                        f"Rain warning sent to {sent} of {len(self.persons)} "
+                        f"recipient(s)" + (f", {failed} failed" if failed else ""),
+                        level="INFO",
+                    )
+                else:
+                    self.log(
+                        f"Rain warning reached NOBODY ({failed} failed, "
+                        f"{len(self.persons)} configured) -- rain in "
+                        f"{rain_minutes} min with {len(open_sensors)} open",
+                        level="ERROR",
+                    )
 
         except Exception as e:
             self.log(f"Error in check_rain_forecast: {e}", level="ERROR")
+
+    def _notify_rain(self, message):
+        """Send one rain warning to every configured person. Returns (sent, failed).
+
+        Extracted so each recipient is isolated. This loop used to sit bare
+        inside `check_rain_forecast`, covered only by that method's broad
+        handler -- so a raise on the first person skipped everyone after them
+        *and* skipped the `last_notification_time` assignment two lines below,
+        which meant the cooldown never started and the next door event re-ran
+        the whole alert. The people who had received it got it again; the person
+        whose notify service was broken still got nothing (T-52).
+        """
+        sent = failed = 0
+        for person in self.persons:
+            notify_service = person.get("notify")
+            if not notify_service:
+                self.log(
+                    "Person {} has no notify address -- cannot warn them about "
+                    "rain".format(person.get("name", "Unknown")),
+                    level="WARNING",
+                )
+                failed += 1
+                continue
+            try:
+                self.call_service(
+                    f"notify/{notify_service}",
+                    message=message,
+                    data=self._notification_data(),
+                )
+                sent += 1
+            except Exception as err:
+                failed += 1
+                self.log(
+                    f"Failed to send rain warning to {notify_service}: {err}",
+                    level="ERROR",
+                )
+        return sent, failed
