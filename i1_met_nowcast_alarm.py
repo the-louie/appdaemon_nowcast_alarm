@@ -8,7 +8,11 @@ Copyright (c) 2025 the_louie
 import appdaemon.plugins.hass.hassapi as hass
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
+
+import irisone_bus
+import notification_policy as policy
 
 
 class RainWarning(hass.Hass):
@@ -16,6 +20,11 @@ class RainWarning(hass.Hass):
 
     def initialize(self):
         """Initialize the rain warning app."""
+        # A-71.5: an older shared module winning AppDaemon's import path must stop
+        # the app here, where the watchdog sees it, not at the first rain warning.
+        if not hasattr(policy, "should_notify") or not hasattr(irisone_bus, "presence_for_target"):
+            raise RuntimeError(f"stale shared module on the import path: "
+                               f"{policy.__file__}, {irisone_bus.__file__}")
         # Configuration
         self.nowcast_sensor = self.args.get("nowcast_sensor")
         self.door_sensors = self.args.get("door_window_sensors", [])
@@ -252,6 +261,15 @@ class RainWarning(hass.Hass):
         the whole alert. The people who had received it got it again; the person
         whose notify service was broken still got nothing (T-52).
         """
+        # URGENT (owner, 2026-10-29): "close the window, rain is coming" is the
+        # owner's own example of urgent. The gate never drops it; it is called so
+        # the class is stated (IQ-12) and counted (IQ-28). A failed presence read
+        # degrades to unknown and never stops a warning.
+        try:
+            domain = self.get_state(irisone_bus.DOMAIN)
+        except Exception as err:
+            self.log(f"[presence] read failed, sending anyway: {err}", level="WARNING")
+            domain = None
         sent = failed = 0
         for person in self.persons:
             notify_service = person.get("notify")
@@ -263,6 +281,9 @@ class RainWarning(hass.Hass):
                 )
                 failed += 1
                 continue
+            in_home, _ = irisone_bus.presence_for_target(domain, notify_service, time.time())
+            _, gate_reason = policy.should_notify(policy.URGENT, in_home)
+            self._report_gate(notify_service, gate_reason)
             try:
                 self.call_service(
                     f"notify/{notify_service}",
@@ -277,3 +298,11 @@ class RainWarning(hass.Hass):
                     level="ERROR",
                 )
         return sent, failed
+
+    def _report_gate(self, target, reason):
+        """Count the decision in irisone.notify_gate_stats (IQ-28). Never blocks a send."""
+        try:
+            self.fire_event(irisone_bus.GATE_EVENT, **irisone_bus.gate_event(
+                self.name, "rain", target, policy.URGENT, True, reason))
+        except Exception as err:  # the counter is evidence, not a dependency
+            self.log(f"[presence] could not report gate decision: {err}", level="WARNING")
